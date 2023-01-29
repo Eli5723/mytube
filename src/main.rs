@@ -68,8 +68,6 @@ async fn main() {
     let login_url = "https://accounts.google.com/ServiceLogin".to_owned();
     let lookup_url = "https://accounts.google.com/_/signin/sl/lookup".to_owned();
 
-    let re = regex::Regex::new(r"^var ytInitialData(?:\s+)?=").unwrap();
-
     download::download_playlist_info().await;
 
 
