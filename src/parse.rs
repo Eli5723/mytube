@@ -31,10 +31,7 @@ pub async fn save_file(text: &String, file_name: &str) -> std::io::Result<()> {
     file.write_all(text.as_bytes())
 }
 
-pub fn get_initial_data(text: &String) -> String {
-    let search_str = "var ytInitialData = ";
-
-    let start = text.find(search_str).unwrap() + search_str.len();
+pub fn extract_brace(text: &String, start: usize) -> String {
     let mut end = start;
     let mut unclosed = 0;
 
@@ -57,16 +54,23 @@ pub fn get_initial_data(text: &String) -> String {
 
     end = end + 1;
 
-    let json_text = String::from_utf8(bytes[start..end].to_vec()).unwrap();
-    let json: Value = serde_json::from_str(&json_text).unwrap();
+    String::from_utf8(bytes[start..end].to_vec()).unwrap()
+}
 
-    let playlist = &json["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]
-        ["content"]["sectionListRenderer"]["contents"][0]["itemSectionRenderer"]["contents"][0]
-        ["playlistVideoListRenderer"]["contents"];
+pub fn extract_initial_data(text: &String) -> String {
+    let search_str = "var ytInitialData = ";
+    let start = text.find(search_str).unwrap() + search_str.len();
+    let ytInitialData = extract_brace(text, start);
 
-    playlist_extractor(playlist.as_array().unwrap());
+    ytInitialData
+}
 
-    json_text
+pub fn extract_ytConfig(text: &String) -> String {
+    let search_str = "ytcfg.set({";
+    let start = text.find(search_str).unwrap() + search_str.len() - 1;
+    let ytConfig = extract_brace(text, start);
+
+    ytConfig
 }
 
 pub fn playlist_extractor(playlist: &Vec<Value>) {
@@ -86,7 +90,7 @@ pub fn playlist_extractor(playlist: &Vec<Value>) {
 }
 
 pub fn playlist_video_extractor(playlist_video: &Value) {
-    println!("Title: {}", playlist_video["title"]["runs"][0]["text"]);
+    println!("Title: {}", playlist_video);
 }
 
 pub fn playlist_continuation_extractor(continuation_item: &Value) {
@@ -106,11 +110,12 @@ pub async fn download_playlist_info() {
     )
     .await
     .unwrap();
-    let document = scraper::Html::parse_document(&text);
+    let _document = scraper::Html::parse_document(&text);
 
-    let st = get_initial_data(&text);
-
-    save_file(&st, "initialData.json").await;
+    let st = extract_initial_data(&text);
+    save_file(&st, "initialData.json").await.unwrap();
+    let st = extract_ytConfig(&text);
+    save_file(&st, "ytConfig.json").await.unwrap();
 
     save_file(&text, "./page.html").await.unwrap();
 
@@ -119,14 +124,6 @@ pub async fn download_playlist_info() {
     )
     .await
     .unwrap();
-
-    let thumbnail_selector = Selector::parse("#thumbnail").unwrap();
-
-    let thumbnails = page.select(&thumbnail_selector);
-    for element in thumbnails {
-        let link = element.value().attr("href").unwrap_or_default();
-        println!("Link: {}", link);
-    }
 
     println!("Done");
 }

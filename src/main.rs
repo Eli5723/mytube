@@ -1,10 +1,17 @@
-mod download;
+mod parse;
+mod adaptor;
+mod constants;
+mod innertube_request;
+mod innertube_response;
 
 use std::{fs::read_to_string, hash::Hash};
 use std::fmt;
 
 use std::collections::HashMap;
 use scraper::{Html, Selector, html};
+use serde_json::json;
+
+use innertube_response::{PlaylistItem};
 
 fn hidden_forum_inputs(page: Html) -> HashMap<String, String> {
     let mut inputs: HashMap<String, String> = HashMap::new();
@@ -63,15 +70,50 @@ fn hashmap_to_str(map: HashMap<String, String>) -> String {
 }
 
 
+
 #[tokio::main]
 async fn main() {
     let login_url = "https://accounts.google.com/ServiceLogin".to_owned();
     let lookup_url = "https://accounts.google.com/_/signin/sl/lookup".to_owned();
+    let mut client = adaptor::Context::new();
 
-    download::download_playlist_info().await;
+    let endpoint = reqwest::Url::parse("https://www.youtube.com/youtubei/v1/browse").unwrap();
+
+    let mut count = 0;
+
+    let result = client.post(endpoint).await.unwrap();
+    let response = result.json::<innertube_response::BrowseResponse>().await.unwrap();
+    for tab in response.contents.two_column_browse_results_renderer.tabs {
+        if tab.tab_renderer.content.is_none() {
+            continue;
+        }
+
+        let content = tab.tab_renderer.content.unwrap();
+        for section in content.section_list_renderer.contents {
+            for item in section.item_section_renderer.contents {
+                if item.playlist_video_list_renderer.is_none() {
+                    continue;                
+                }
+
+                let list = item.playlist_video_list_renderer.unwrap().contents;
+                for item in list {
+                    match item {
+                        PlaylistItem::Video(video) => {
+                            count = count + 1;
+                            println!("Got video #{}", count);
+                        },
+                        PlaylistItem::Continuation(continuation) => {
+                            println!("Got continuation after {} videos", count);
+                        }
+                    }
+
+                }
+            }
+        }
 
 
-
-
+    }
+    
+    // parse::download_playlist_info().await;
     ()
 }
