@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct InnertubeRequest {
     pub context: Option<Context>,
-    pub continuation_token: Option<String>,
+    pub continuation: Option<String>,
     pub command_metadata: Option<CommandMetadata>,
     pub browse_endpoint: Option<BrowseEndpoint>,
     pub playlist_id: Option<String>,

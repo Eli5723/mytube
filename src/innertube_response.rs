@@ -11,6 +11,7 @@ pub struct ResponseContext {
 pub struct BrowseResponse {
     #[serde(skip)]
     pub response_context: Option<ResponseContext>,
+    pub on_response_received_actions: Option<Vec<OnResponseReceivedAction>>,
     pub contents: Contents,
 }
 
@@ -131,5 +132,30 @@ pub struct PlaylistContinuation {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaylistContinuationRenderer {
-    trigger: String
+    pub continuation_endpoint: ContinuationEndpoint
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinuationEndpoint {
+    pub continuation_command: ContinuationCommand
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinuationCommand {
+    pub token: String 
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnResponseReceivedAction {
+    pub append_continuation_items_action: AppendContinuationItemsAction
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppendContinuationItemsAction {
+    pub continuation_items: Vec<PlaylistItem>
+}
+

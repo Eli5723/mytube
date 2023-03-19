@@ -3,117 +3,88 @@ mod adaptor;
 mod constants;
 mod innertube_request;
 mod innertube_response;
+mod util;
 
-use std::{fs::read_to_string, hash::Hash};
-use std::fmt;
+use innertube_response::PlaylistItem;
 
-use std::collections::HashMap;
-use scraper::{Html, Selector, html};
-use serde_json::json;
-
-use innertube_response::{PlaylistItem};
-
-fn hidden_forum_inputs(page: Html) -> HashMap<String, String> {
-    let mut inputs: HashMap<String, String> = HashMap::new();
-
-    let mut selector = Selector::parse("input").unwrap();
-    let elements = page.select(&selector);
-
-    for element in elements {
-        let e = element.value();
-        let _type = element.value().attr("type").unwrap_or_default();
-
-        if !_type.eq("hidden") && !_type.eq("submit") {
-            continue;
-        }
-
-        let identifier = e.attr("name").or(e.id());
-
-        let identifier = match identifier {
-            Some(value) => {value},
-            None => {continue;}
-        };
-
-        let value = e.attr("value").unwrap_or_default();
-
-        inputs.insert(identifier.to_string(), value.to_string());
-    }
-
-    inputs
-}
-
-fn request(url: String, hidden_inputs: HashMap<String, String>,  f_req: HashMap<String, String>){
-    let mut data = hidden_inputs.clone();
-    data.insert("pstMsg".to_owned(),"1".to_owned());
-    data.insert("checkConnection".to_owned(),"youtube".to_owned());
-    data.insert("checkedDomains".to_owned(),"youtube".to_owned());
-    data.insert("hl".to_owned(),"en".to_owned());
-    data.insert("deviceinfo".to_owned(), "[null,null,null,[],null,\"US\",null,null,[], \"GlifWebSignIn\",null,[null,null,[]]]".to_owned());
-    data.insert("f.req".to_owned(), hashmap_to_str(f_req));
-    data.insert("flowName".to_owned(),"GlifWebSignIn".to_owned());
-    data.insert("flowEntry".to_owned(),"ServiceLogin".to_owned());
-
-    print!("{:?}", data);
-}
-
-fn hashmap_to_str(map: HashMap<String, String>) -> String {
-    let mut res = String::from("{");
-    
-    for (k, v) in map {
-        res.push_str(format!("\"{}\":\"{}\",", k, v).as_str());
-    }
-
-    res.pop();
-    res.push_str("}");
-
-    res
-}
-
-
-
-#[tokio::main]
-async fn main() {
-    let login_url = "https://accounts.google.com/ServiceLogin".to_owned();
-    let lookup_url = "https://accounts.google.com/_/signin/sl/lookup".to_owned();
-    let mut client = adaptor::Context::new();
-
-    let endpoint = reqwest::Url::parse("https://www.youtube.com/youtubei/v1/browse").unwrap();
-
-    let mut count = 0;
-
-    let result = client.post(endpoint).await.unwrap();
-    let response = result.json::<innertube_response::BrowseResponse>().await.unwrap();
-    for tab in response.contents.two_column_browse_results_renderer.tabs {
+fn parse_browse_results(response: &innertube_response::BrowseResponse) -> Option<String> {
+    for tab in response.contents.two_column_browse_results_renderer.tabs.iter() {
         if tab.tab_renderer.content.is_none() {
             continue;
         }
 
-        let content = tab.tab_renderer.content.unwrap();
-        for section in content.section_list_renderer.contents {
-            for item in section.item_section_renderer.contents {
+        let content = tab.tab_renderer.content.as_ref().unwrap();
+        for section in content.section_list_renderer.contents.iter() {
+            for item in section.item_section_renderer.contents.iter() {
                 if item.playlist_video_list_renderer.is_none() {
                     continue;                
                 }
 
-                let list = item.playlist_video_list_renderer.unwrap().contents;
+                let list: &Vec<PlaylistItem> = item.playlist_video_list_renderer.as_ref().unwrap().contents.as_ref();
                 for item in list {
                     match item {
                         PlaylistItem::Video(video) => {
-                            count = count + 1;
-                            println!("Got video #{}", count);
+                            let title = video.playlist_video_renderer.title.runs.first().unwrap().text.clone();
                         },
                         PlaylistItem::Continuation(continuation) => {
-                            println!("Got continuation after {} videos", count);
+                            let token = &continuation.continuation_item_renderer.continuation_endpoint.continuation_command.token;
+                            return Some(token.to_string());
                         }
                     }
-
                 }
             }
         }
-
-
     }
+
+    None
+}
+
+fn parse_continuation_items(response: &innertube_response::BrowseResponse) -> Option<String> {
+    if let Some(on_response_received_actions) = response.on_response_received_actions.as_ref() {
+        for action in on_response_received_actions {
+            let list: &Vec<PlaylistItem> = action.append_continuation_items_action.continuation_items.as_ref();
+            for item in list {
+                match item {
+                    PlaylistItem::Video(video) => {
+                        let title = video.playlist_video_renderer.title.runs.first().unwrap().text.clone();
+                        println!("Title: {}", title);
+                    },
+                    PlaylistItem::Continuation(continuation) => {
+                        println!("Got continuation!");
+                        let token = &continuation.continuation_item_renderer.continuation_endpoint.continuation_command.token;
+                        return Some(token.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+
+#[tokio::main]
+async fn main() {
+    let mut client = adaptor::Context::new();
+
+    let endpoint = reqwest::Url::parse("https://www.youtube.com/youtubei/v1/browse").unwrap();
+
+    let result = client.post(endpoint).await.unwrap();
+    let response = result.json::<innertube_response::BrowseResponse>().await.unwrap();
     
-    // parse::download_playlist_info().await;
+    let mut continuation = parse_browse_results(&response);
+    while let Some(token) = continuation {
+        let endpoint = reqwest::Url::parse("https://www.youtube.com/youtubei/v1/browse").unwrap();
+        let continuation_response = client.post_continuation(endpoint, token)
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+        continuation = parse_continuation_items(&continuation_response);
+    }
+
+
     ()
 }
