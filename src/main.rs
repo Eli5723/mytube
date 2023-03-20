@@ -47,10 +47,8 @@ fn parse_continuation_items(response: &innertube_response::BrowseResponse) -> Op
                 match item {
                     PlaylistItem::Video(video) => {
                         let title = video.playlist_video_renderer.title.runs.first().unwrap().text.clone();
-                        println!("Title: {}", title);
                     },
                     PlaylistItem::Continuation(continuation) => {
-                        println!("Got continuation!");
                         let token = &continuation.continuation_item_renderer.continuation_endpoint.continuation_command.token;
                         return Some(token.to_string());
                     }
@@ -62,29 +60,31 @@ fn parse_continuation_items(response: &innertube_response::BrowseResponse) -> Op
     None
 }
 
-
 #[tokio::main]
 async fn main() {
     let mut client = adaptor::Context::new();
 
     let endpoint = reqwest::Url::parse("https://www.youtube.com/youtubei/v1/browse").unwrap();
 
-    let result = client.post(endpoint).await.unwrap();
-    let response = result.json::<innertube_response::BrowseResponse>().await.unwrap();
+    let result = client.post(endpoint)
+    .await
+    .unwrap()
+    .json::<innertube_response::BrowseResponse>()
+    .await
+    .unwrap();
     
-    let mut continuation = parse_browse_results(&response);
+    let mut continuation = parse_browse_results(&result);
     while let Some(token) = continuation {
         let endpoint = reqwest::Url::parse("https://www.youtube.com/youtubei/v1/browse").unwrap();
         let continuation_response = client.post_continuation(endpoint, token)
         .await
         .unwrap()
-        .json()
+        .json::<innertube_response::BrowseResponse>()
         .await
         .unwrap();
 
         continuation = parse_continuation_items(&continuation_response);
     }
-
 
     ()
 }
